@@ -1,0 +1,17 @@
+#!perl
+
+use strict;
+
+use Apache::Scoreboard ();
+
+my $r = shift;
+
+$r->send_http_header('text/plain');
+
+my $image = Apache::Scoreboard->image;
+
+for (my $i=0; $i<Apache::Constants::HARD_SERVER_LIMIT; $i++) {
+    my $pid = $image->parent($i)->pid;
+    last unless $pid;
+    print $pid, "\n";
+}

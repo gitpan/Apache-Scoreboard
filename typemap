@@ -1,0 +1,4 @@
+Apache::Scoreboard	T_PTROBJ
+Apache::ShortScore	T_PTROBJ
+Apache::ParentScore	T_PTROBJ
+pid_t	T_IV
