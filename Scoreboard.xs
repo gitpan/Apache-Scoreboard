@@ -15,6 +15,7 @@ typedef Apache__server_score * Apache__ServerScore;
 typedef struct {
     parent_score record;
     int idx;
+    scoreboard *image;
 } Apache__parent_score;
 
 typedef Apache__parent_score * Apache__ParentScore;
@@ -32,6 +33,8 @@ typedef scoreboard * Apache__Scoreboard;
 #define server_score_request(s) s->record.request
 
 #define parent_score_pid(s) s->record.pid
+
+static scoreboard *my_scoreboard_image = NULL;
 
 static char status_flags[SERVER_NUM_STATUS];
 
@@ -88,6 +91,14 @@ BOOT:
     status_flags_init();
 }
 
+void
+END()
+
+    CODE:
+    if (my_scoreboard_image) {
+	safefree(my_scoreboard_image);
+    }
+
 SV *
 size_string(size)
     size_t size
@@ -110,13 +121,13 @@ thaw(CLASS, packet)
 	XSRETURN_UNDEF;
     }
 
-    if (!ap_scoreboard_image) {
-	ap_scoreboard_image = 
-	  (scoreboard *)safemalloc(sizeof(*ap_scoreboard_image));
-	memset((char *)ap_scoreboard_image, 0, sizeof(*ap_scoreboard_image));
+    if (!my_scoreboard_image) {
+	my_scoreboard_image = 
+	  (scoreboard *)safemalloc(sizeof(*my_scoreboard_image));
+	memset((char *)my_scoreboard_image, 0, sizeof(*my_scoreboard_image));
     }
 
-    RETVAL = ap_scoreboard_image;
+    RETVAL = my_scoreboard_image;
     ptr = SvPVX(packet);
     psize = unpack16(ptr);
     ptr += SIZE16;
@@ -166,6 +177,7 @@ parent(image, idx=0)
     RETVAL = (Apache__ParentScore )safemalloc(sizeof(*RETVAL));
     RETVAL->record = image->parent[idx];
     RETVAL->idx = idx;
+    RETVAL->image = image;
 
     OUTPUT:
     RETVAL
@@ -342,12 +354,13 @@ next(self)
 
     CODE:
     ++self->idx;
-    if (!ap_scoreboard_image->parent[self->idx].pid) {
+    if (!self->image->parent[self->idx].pid) {
 	XSRETURN_UNDEF;
     }
     RETVAL = (Apache__ParentScore )safemalloc(sizeof(*RETVAL));
-    RETVAL->record = ap_scoreboard_image->parent[self->idx];
+    RETVAL->record = self->image->parent[self->idx];
     RETVAL->idx = self->idx;
+    RETVAL->image = self->image;
 
     OUTPUT:
     RETVAL
@@ -358,7 +371,7 @@ server(self)
 
     CODE:
     RETVAL = (Apache__ServerScore )safemalloc(sizeof(*RETVAL));
-    RETVAL->record = ap_scoreboard_image->servers[self->idx];
+    RETVAL->record = self->image->servers[self->idx];
 
     OUTPUT:
     RETVAL

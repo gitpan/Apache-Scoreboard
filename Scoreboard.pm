@@ -5,7 +5,7 @@ use constant DEBUG => 0;
 
 BEGIN {
     no strict;
-    $VERSION = '0.07';
+    $VERSION = '0.08';
     @ISA = qw(DynaLoader);
     if ($ENV{MOD_PERL}) {
 	__PACKAGE__->bootstrap($VERSION);
@@ -61,7 +61,8 @@ sub retrieve {
     local *FH;
     open FH, $file or die "open $file: $!";
     local $/;
-    $self->thaw(<FH>);
+    my $data = <FH>;
+    $self->thaw($data);
 }
 
 1;

@@ -1,3 +1,9 @@
+0.08 - December 7, 1999
+
+most of example code moved to Apache::ScoreboardGraph
+
+thaw() uses my_scoreboard_image instead of ap_scoreboard_image
+
 0.07 - December 5, 1999
 
 req_time and scalar times will return 0 if access_count == 0
