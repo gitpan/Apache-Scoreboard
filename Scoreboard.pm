@@ -4,9 +4,21 @@ use strict;
 
 {
     no strict;
-    $VERSION = '0.03';
+    $VERSION = '0.04';
     @ISA = qw(DynaLoader);
-    __PACKAGE__->bootstrap($VERSION) if $ENV{MOD_PERL};
+    if ($ENV{MOD_PERL}) {
+	__PACKAGE__->bootstrap($VERSION);
+    }
+    else {
+	require Apache::DummyScoreboard;
+    }
+}
+
+sub fetch {
+    my($self, $url) = @_;
+    require LWP::Simple;
+    my $packet = LWP::Simple::get($url);
+    $self->receive($packet);
 }
 
 1;

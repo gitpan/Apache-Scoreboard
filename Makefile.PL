@@ -10,7 +10,21 @@ WriteMakefile(
     'VERSION_FROM' => 'Scoreboard.pm', 
     'INC'       => $src->inc,	      
     'DEFINE' => $src->define,
+    'TYPEMAPS' => $src->typemaps,
     'dist'    => {
         #PREOP => 'pod2text Scoreboard.pm > README',
     },
+   'macro' => {
+	  CVSROOT => 'modperl.com:/local/cvs_repository',
+   },
 );
+
+sub MY::postamble { 
+    return <<'EOF'; 
+
+cvs_tag :
+	cvs -d $(CVSROOT) tag v$(VERSION_SYM) . 
+	@echo update Scoreboard.pm VERSION now 
+EOF
+}
+

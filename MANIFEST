@@ -6,3 +6,6 @@ typemap
 pid-test
 Changes
 README
+Dummy/dummy.c
+Dummy/Makefile.PL
+Dummy/DummyScoreboard.pm
