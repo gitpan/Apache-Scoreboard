@@ -19,7 +19,7 @@ sub genxs {
 genxs();
 exit if $ARGV[0] eq '-g';
 
-WriteMakefile1(
+WriteMakefile(
     'NAME'	=> 'Apache::DummyScoreboard',
     'VERSION_FROM' => 'DummyScoreboard.pm', 
     'INC'       => "-I../ " . $src->inc,	      

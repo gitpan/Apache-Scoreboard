@@ -1,26 +1,24 @@
 package Apache::Scoreboard;
 
-$Apache::Scoreboard::VERSION = '2.04';
-
 use strict;
-use warnings FATAL => 'all';
+use constant DEBUG => 0;
 
 BEGIN {
-    require mod_perl;
-    die "This module was built against mod_perl 2.0 ",
-        "and can't be used with $mod_perl::VERSION, "
-            unless $mod_perl::VERSION > 1.98;
+    use mod_perl;
+    die "mod_perl < 2.0 is required" unless $mod_perl::VERSION < 1.99;
 }
 
-# so that it can be loaded w/o mod_perl (.e.g MakeMaker requires this
-# file when Apache::Scoreboard is some other module's PREREQ_PM)
-if ($ENV{MOD_PERL}) {
-    require XSLoader;
-    XSLoader::load(__PACKAGE__, $Apache::Scoreboard::VERSION);
+BEGIN {
+    no strict;
+    $VERSION = '0.14';
+    @ISA = qw(DynaLoader);
+    if ($ENV{MOD_PERL}) {
+	__PACKAGE__->bootstrap($VERSION);
+    }
+    else {
+	require Apache::DummyScoreboard;
+    }
 }
-
-
-use constant DEBUG => 0;
 
 my $ua;
 
@@ -41,40 +39,35 @@ sub http_fetch {
 	return undef;
     }
 
-    # XXX: fixme
-#    my $type = $response->header('Content-type');
-#    unless ($type eq Apache::Scoreboard::REMOTE_SCOREBOARD_TYPE) {
-#	warn "invalid scoreboard Content-type: $type" if DEBUG;
-#	return undef;
-#    }
+    my $type = $response->header('Content-type');
+    unless ($type eq Apache::Scoreboard::REMOTE_SCOREBOARD_TYPE) {
+	warn "invalid scoreboard Content-type: $type" if DEBUG;
+	return undef;
+    }
 
     $response->content;
 }
 
 sub fetch {
-    my($self, $pool, $url) = @_;
-    $self->thaw($pool, $self->http_fetch($url));
+    my($self, $url) = @_;
+    $self->thaw($self->http_fetch($url));
 }
 
 sub fetch_store {
     my($self, $url, $file) = @_;
-    $self->store($self->http_fetch($url), $file);
-}
-
-sub store {
-    my($self, $frozen_image, $file) = @_;
-    open my $fh, ">$file" or die "open $file: $!";
-    print $fh $frozen_image;
-    close $fh;
+    local *FH;
+    open FH, ">$file" or die "open $file: $!";
+    print FH $self->http_fetch($url);
+    close FH;
 }
 
 sub retrieve {
-    my($self, $pool, $file) = @_;
-    open my $fh, $file or die "open $file: $!";
+    my($self, $file) = @_;
+    local *FH;
+    open FH, $file or die "open $file: $!";
     local $/;
-    my $data = <$fh>;
-    close $fh;
-    $self->thaw($pool, $data);
+    my $data = <FH>;
+    $self->thaw($data);
 }
 
 1;
@@ -120,7 +113,7 @@ which must contain the following configuration:
 
  PerlModule Apache::Scoreboard
  <Location /scoreboard>
-    SetHandler modperl
+    SetHandler perl-script
     PerlHandler Apache::Scoreboard::send
     order deny,allow
     deny from all
@@ -301,6 +294,12 @@ context it returns floating seconds like Time::HiRes::time()
 Returns the time taken to process the request in microseconds:
 
  my $req_time = $server->req_time;
+
+=item vhost
+
+Returns the vhost entry
+
+ my $vhost = $server->vhost;
 
 =back
 
