@@ -216,12 +216,17 @@ times(self)
 #else
 	float tick = HZ;
 #endif
-	/* cpu %, same value mod_status displays */
-	float RETVAL = (self->record.times.tms_utime +
-			self->record.times.tms_stime +
-			self->record.times.tms_cutime +
-			self->record.times.tms_cstime);
-	XPUSHs(sv_2mortal(newSVnv((double)RETVAL/tick)));
+	if (self->record.access_count) {
+	    /* cpu %, same value mod_status displays */
+	      float RETVAL = (self->record.times.tms_utime +
+			      self->record.times.tms_stime +
+			      self->record.times.tms_cutime +
+			      self->record.times.tms_cstime);
+	    XPUSHs(sv_2mortal(newSVnv((double)RETVAL/tick)));
+	}
+	else {
+	    XPUSHs(sv_2mortal(newSViv((0))));
+	}
     }
 
 void
@@ -266,7 +271,7 @@ req_time(self)
 	      ((self->record.stop_time.tv_usec - 
 		self->record.start_time.tv_usec) / 1000);
     }
-    if (RETVAL < 0L) {
+    if (RETVAL < 0L || !self->record.access_count) {
 	RETVAL = 0L;
     }
 
