@@ -4,29 +4,40 @@ use strict;
 use warnings FATAL => 'all';
 
 use Apache::Test;
+use Apache::TestRequest ();
+use Apache::TestTrace;
 
-use Apache::Response ();
-use Apache::RequestRec ();
+use File::Spec::Functions qw(catfile);
 
 use Apache::Scoreboard ();
 use MyTest::Common ();
 
-use Apache::Const -compile => 'OK';
+use Apache::Constants qw(:common);
+
+my $tests_local  = 0;
+my $tests_common = MyTest::Common::num_of_tests();
+
+my $cfg = Apache::Test::config();
+my $hostport = Apache::TestRequest::hostport($cfg);
+my $retrieve_url = "http://$hostport/scoreboard";
 
 sub handler {
     my $r = shift;
 
-    my $ntests = MyTest::Common::num_of_tests();
+    plan $r, tests => $tests_local + $tests_common*2;
 
-    plan $r, todo => [], tests => $ntests, ['status'];
+    my $cfg = Apache::Test::config();
+    my $vars = $cfg->{vars};
 
-    MyTest::Common::test1();
+    my @images = (
+        Apache::Scoreboard->fetch($retrieve_url),
+        Apache::Scoreboard->image(),
+    );
 
-    # get the image internally (only under the live server)
-    my $image = Apache::Scoreboard->image($r->pool);
-    MyTest::Common::test2($image);
+    for my $image (@images) {
+        die "no image fetched" unless $image;
+        MyTest::Common::test($image);
+    }
 
-    Apache::OK;
+    return OK;
 }
-
-1;

@@ -1,4 +1,4 @@
-#define REMOTE_SCOREBOARD_TYPE "application/x-httpd-scoreboard"
+#define REMOTE_SCOREBOARD_TYPE "application/x-apache-scoreboard"
 
 #ifndef Move
 #define Move(s,d,n,t) (void)memmove((char*)(d),(char*)(s), (n) * sizeof(t)) 
@@ -6,10 +6,6 @@
 #ifndef Copy
 #define Copy(s,d,n,t) (void)memcpy((char*)(d),(char*)(s), (n) * sizeof(t))
 #endif
-
-/* use this macro when using with objects created by the pool, can't
- * mix memmove with pool allocation */
-#define Copy_pool(p, s, n, t) apr_pmemdup(p, s, (n) * sizeof(t))
 
 #define SIZE16 2
 
@@ -26,50 +22,37 @@ static unsigned short unpack16(unsigned char *s)
     return ntohs(ashort);
 }
 
-#define WRITE_BUFF(buf, size, r)                                \
-    if (ap_rwrite(buf, size, r) < 0) { return APR_EGENERAL; }
-
 static int scoreboard_send(request_rec *r)
 {
-    int psize, ssize, tsize;
-    char buf[SIZE16*4];
+    int i, psize, ssize, tsize;
+    char buf[SIZE16*2];
     char *ptr = buf;
-    int server_limit, thread_limit;
 
-    ap_mpm_query(AP_MPMQ_HARD_LIMIT_THREADS, &thread_limit);
-    ap_mpm_query(AP_MPMQ_HARD_LIMIT_DAEMONS, &server_limit);
+    ap_sync_scoreboard_image();
+    for (i=0; i<HARD_SERVER_LIMIT; i++) {
+	if (!ap_scoreboard_image->parent[i].pid) {
+	    break;
+	}
+    }
 
-    psize = sizeof(process_score) * server_limit;
-    ssize = sizeof(worker_score)  * server_limit * thread_limit;
+    psize = i * sizeof(parent_score);
+    ssize = i * sizeof(short_score);
     tsize = psize + ssize + sizeof(global_score) + sizeof(buf);
 
     pack16(ptr, psize);
     ptr += SIZE16;
     pack16(ptr, ssize);
-    ptr += SIZE16;
-    pack16(ptr, server_limit);
-    ptr += SIZE16;
-    pack16(ptr, thread_limit);
-
-#if 0
-    ap_log_error(APLOG_MARK, APLOG_ERR, 0, modperl_global_get_server_rec(),
-                 "send: sizes server_limit=%d, thread_num=%d, psize=%d, "
-                 "ssize=%d, %d, %d, %d\n",
-                 server_limit, thread_limit, psize, ssize,
-                 sizeof(global_score), sizeof(buf), tsize);
-#endif
 
     ap_set_content_length(r, tsize);
     r->content_type = REMOTE_SCOREBOARD_TYPE;
-    
+    ap_send_http_header(r);
+
     if (!r->header_only) {
-        WRITE_BUFF(&buf[0],                         sizeof(buf),          r);
-        WRITE_BUFF(&ap_scoreboard_image->parent[0], psize,                r);
-        WRITE_BUFF(ap_scoreboard_image->servers[0], ssize,                r);
-        WRITE_BUFF(ap_scoreboard_image->global,     sizeof(global_score), r);
+	ap_rwrite(&buf[0], sizeof(buf), r);
+	ap_rwrite(&ap_scoreboard_image->parent[0], psize, r);
+	ap_rwrite(&ap_scoreboard_image->servers[0], ssize, r);
+	ap_rwrite(&ap_scoreboard_image->global, sizeof(global_score), r);
     }
 
-    return APR_SUCCESS;
+    return OK;
 }
-
-

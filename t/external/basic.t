@@ -1,26 +1,29 @@
+#!/usr/bin/perl -w
+
 use strict;
 use warnings FATAL => 'all';
 
+local $| = 1;
+
 use MyTest::Common ();
-use Apache::Scoreboard ();
-use APR::Pool ();
 
 use Apache::Test;
-use Apache::TestTrace;
 use Apache::TestRequest ();
+use Apache::TestTrace;
 
-my $retrieve_url = MyTest::Common::retrieve_url();
+use File::Spec::Functions qw(catfile);
 
-my $pool = APR::Pool->new; #XXX: pool's life
-my $ntests = MyTest::Common::num_of_tests();
+my $tests_local  = 0;
+my $tests_common = MyTest::Common::num_of_tests();
 
-plan todo => [], tests => $ntests, ['status'];
+plan tests => $tests_local + $tests_common;
 
-MyTest::Common::test1();
+my $cfg = Apache::Test::config();
+my $hostport = Apache::TestRequest::hostport($cfg);
+my $retrieve_url = "http://$hostport/scoreboard";
 
-my $image = Apache::Scoreboard->fetch($pool, $retrieve_url);
-MyTest::Common::test2($image);
+my $image = Apache::Scoreboard->fetch($retrieve_url);
 
-1;
+die "no image fetched" unless $image;
 
-__END__
+MyTest::Common::test($image);

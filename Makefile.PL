@@ -1,28 +1,17 @@
+use ExtUtils::MakeMaker;
+
 use strict;
-#use warnings;
-use warnings FATAL => 'all';
-#no warnings 'redefine';
+use Apache::src ();
 
-use Apache2;
-use mod_perl 1.99;
-
-# XXX: need to check that the same perl is used as the one mod_perl
-# was built with, otherwise unresolved symbols problems occur:
-# e.g. try using mod_perl.so built with blead-perl and build the
-# scoreboard with blead-ithreads-perl
-#use Apache::Build ();
-#my $build = Apache::Build->new;
-#use lib qw(../lib ../Apache-Test/lib);
-
-use ModPerl::MM ();
+my $src = Apache::src->new;
 
 # enable 'make test|clean'
 use Apache::TestMM qw(test clean);
-
 # prerequisites
+
 my %require = (
     "Apache::Test" => "1.10", # ipv6 fixes
-    "mod_perl"     => "1.9917",
+    "mod_perl"     => "1.18",
 );
 
 my @scripts = qw(t/TEST);
@@ -31,10 +20,13 @@ my @scripts = qw(t/TEST);
 Apache::TestMM::filter_args();
 Apache::TestMM::generate_script('t/TEST');
 
-ModPerl::MM::WriteMakefile(
+WriteMakefile(
     NAME         => 'Apache::Scoreboard',
-    VERSION_FROM => 'lib/Apache/Scoreboard.pm',
+    VERSION_FROM => 'Scoreboard.pm',
     PREREQ_PM    => \%require,
+    INC          => $src->inc,
+    DEFINE       => $src->define,
+    TYPEMAPS     => $src->typemaps,
     clean        => {
         FILES => "@{ clean_files() }",
     }
@@ -44,5 +36,24 @@ sub clean_files {
     return \@scripts;
 }
 
+sub MY::postamble {
+    return <<'EOF';
 
-__END__
+cvs_tag :
+	cvs -d $(CVSROOT) tag v$(VERSION_SYM) .
+	@echo update Scoreboard.pm VERSION now
+EOF
+}
+
+sub MY::top_targets {
+    my $self = shift;
+    my $string = $self->MM::top_targets;
+
+    $string .= <<'EOF';
+dummy:
+	cd Dummy && $(PERL) Makefile.PL -g
+
+EOF
+
+    $string;
+}

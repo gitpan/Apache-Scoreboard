@@ -1,12 +1,12 @@
 # http://module-build.sourceforge.net/META-spec.html
 #XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
 name:         Apache-Scoreboard
-version:      2.05
-version_from: lib/Apache/Scoreboard.pm
+version:      0.15
+version_from: Scoreboard.pm
 installdirs:  site
 requires:
     Apache::Test:                  1.10
-    mod_perl:                      1.9917
+    mod_perl:                      1.18
 
 distribution_type: module
 generated_by: ExtUtils::MakeMaker version 6.25
