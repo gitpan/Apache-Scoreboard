@@ -4,7 +4,7 @@ use strict;
 
 {
     no strict;
-    $VERSION = '0.02';
+    $VERSION = '0.03';
     @ISA = qw(DynaLoader);
     __PACKAGE__->bootstrap($VERSION) if $ENV{MOD_PERL};
 }

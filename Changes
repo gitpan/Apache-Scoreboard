@@ -1,0 +1,10 @@
+0.03 - October 14, 1999
+
+added Apache::ShortScore client and request methods
+[Stas Bekman <sbekman@iil.intel.com>]
+
+fix PREFIX for Apache::ShortScore [Stas Bekman <sbekman@iil.intel.com>]
+
+0.02 - October 5, 1999
+
+first release

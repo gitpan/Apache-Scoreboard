@@ -22,6 +22,8 @@ typedef scoreboard * Apache__Scoreboard;
 #define short_score_my_bytes_served(s) s->record.my_bytes_served
 #define short_score_conn_bytes(s) s->record.conn_bytes
 #define short_score_conn_count(s) s->record.conn_count
+#define short_score_client(s) s->record.client
+#define short_score_request(s) s->record.request
 
 #define parent_score_pid(s) s->record.pid
 
@@ -49,29 +51,29 @@ image(CLASS)
 
 Apache::ShortScore
 servers(image, idx)
-    SV *image
+    Apache::Scoreboard image
     int idx
 
     CODE:
     RETVAL = (Apache__ShortScore )safemalloc(sizeof(*RETVAL));
-    RETVAL->record = ap_scoreboard_image->servers[idx];
+    RETVAL->record = image->servers[idx];
 
     OUTPUT:
     RETVAL
 
 Apache::ParentScore
 parent(image, idx)
-    SV *image
+    Apache::Scoreboard image
     int idx
 
     CODE:
     RETVAL = (Apache__ParentScore )safemalloc(sizeof(*RETVAL));
-    RETVAL->record = ap_scoreboard_image->parent[idx];
+    RETVAL->record = image->parent[idx];
 
     OUTPUT:
     RETVAL
 
-MODULE = Apache::Scoreboard   PACKAGE = Apache::ShortScore   PREFIX = short_score
+MODULE = Apache::Scoreboard   PACKAGE = Apache::ShortScore   PREFIX = short_score_
 
 void
 DESTROY(self)
@@ -106,6 +108,14 @@ short_score_conn_bytes(self)
 
 unsigned short
 short_score_conn_count(self)
+    Apache::ShortScore self
+
+char *
+short_score_client(self)
+    Apache::ShortScore self
+
+char *
+short_score_request(self)
     Apache::ShortScore self
 
 MODULE = Apache::Scoreboard   PACKAGE = Apache::ParentScore   PREFIX = parent_score_
