@@ -1,3 +1,21 @@
+0.06 - December 5, 1999
+
+removed pid-test
+
+added examples/
+
+added Apache::Scoreboard->{pids,fetch_store,retrieve} methods
+
+added Apache::Scoreboard::size_string function
+
+added apxs/mod_scoreboard_send.c
+
+added docs
+
+added Apache::ParentScore->{next,server} methods
+
+Apache::ShortScore class renamed to Apache::ServerScore
+
 0.05 - November 28, 1999
 
 $server->status is now a dual-var

@@ -1,53 +1,39 @@
 #include "modules/perl/mod_perl.h"
 #include "scoreboard.h"
 
-#define REMOTE_SCOREBOARD_TYPE "application/x-apache-scoreboard"
 #ifndef HZ
 #define HZ 100
 #endif
 
 typedef struct {
     short_score record;
-} Apache__short_score;
+    int idx;
+} Apache__server_score;
 
-typedef Apache__short_score * Apache__ShortScore;
+typedef Apache__server_score * Apache__ServerScore;
 
 typedef struct {
     parent_score record;
+    int idx;
 } Apache__parent_score;
 
 typedef Apache__parent_score * Apache__ParentScore;
 
 typedef scoreboard * Apache__Scoreboard;
 
-#define short_score_status(s) s->record.status
-#define short_score_access_count(s) s->record.access_count
-#define short_score_bytes_served(s) s->record.bytes_served
-#define short_score_my_access_count(s) s->record.my_access_count
-#define short_score_my_bytes_served(s) s->record.my_bytes_served
-#define short_score_conn_bytes(s) s->record.conn_bytes
-#define short_score_conn_count(s) s->record.conn_count
-#define short_score_client(s) s->record.client
-#define short_score_request(s) s->record.request
+#define server_score_status(s) s->record.status
+#define server_score_access_count(s) s->record.access_count
+#define server_score_bytes_served(s) s->record.bytes_served
+#define server_score_my_access_count(s) s->record.my_access_count
+#define server_score_my_bytes_served(s) s->record.my_bytes_served
+#define server_score_conn_bytes(s) s->record.conn_bytes
+#define server_score_conn_count(s) s->record.conn_count
+#define server_score_client(s) s->record.client
+#define server_score_request(s) s->record.request
 
 #define parent_score_pid(s) s->record.pid
 
 static char status_flags[SERVER_NUM_STATUS];
-
-#define SIZE16 2
-
-static void pack16(unsigned char *s, int p)
-{
-    short ashort = htons(p);
-    Move(&ashort, s, SIZE16, unsigned char);
-}
-
-static unsigned short unpack16(unsigned char *s)
-{
-    unsigned short ashort;
-    Copy(s, &ashort, SIZE16, char);
-    return ntohs(ashort);
-}
 
 static void status_flags_init(void)
 {
@@ -62,7 +48,34 @@ static void status_flags_init(void)
     status_flags[SERVER_GRACEFUL] = 'G';
 }
 
-MODULE = Apache::Scoreboard   PACKAGE = Apache::Scoreboard
+static SV *size_string(size_t size)
+{
+    SV *sv = newSVpv("    -", 5);
+    if (size == (size_t)-1) {
+	/**/
+    }
+    else if (!size) {
+	sv_setpv(sv, "   0k");
+    }
+    else if (size < 1024) {
+	sv_setpv(sv, "   1k");
+    }
+    else if (size < 1048576) {
+	sv_setpvf(sv, "%4dk", (size + 512) / 1024);
+    }
+    else if (size < 103809024) {
+	sv_setpvf(sv, "%4.1fM", size / 1048576.0);
+    }
+    else {
+	sv_setpvf(sv, "%4dM", (size + 524288) / 1048576);
+    }
+
+    return sv;
+}
+
+#include "apxs/send.c"
+
+MODULE = Apache::Scoreboard   PACKAGE = Apache::Scoreboard   PREFIX = scoreboard_
 
 BOOT:
 {
@@ -75,44 +88,13 @@ BOOT:
     status_flags_init();
 }
 
+SV *
+size_string(size)
+    size_t size
+
 int
-send(r)
+scoreboard_send(r)
     Apache r
-
-    PREINIT:
-    int i, psize, ssize, tsize;
-    char buf[SIZE16*2];
-    char *ptr = buf;
-
-    CODE:
-    ap_sync_scoreboard_image();
-    for (i=0; i<HARD_SERVER_LIMIT; i++) {
-	if (!ap_scoreboard_image->parent[i].pid) {
-	    break;
-	}
-    }
-    RETVAL = OK;
-    psize = i * sizeof(parent_score);
-    ssize = i * sizeof(short_score);
-    tsize = psize + ssize + sizeof(global_score) + sizeof(buf);
-
-    pack16(ptr, psize);
-    ptr += SIZE16;
-    pack16(ptr, ssize);
-
-    ap_set_content_length(r, tsize);
-    r->content_type = REMOTE_SCOREBOARD_TYPE;
-    ap_send_http_header(r);
-
-    if (!r->header_only) {
-	ap_rwrite(&buf[0], sizeof(buf), r);
-	ap_rwrite(&ap_scoreboard_image->parent[0], psize, r);
-	ap_rwrite(&ap_scoreboard_image->servers[0], ssize, r);
-	ap_rwrite(&ap_scoreboard_image->global, sizeof(global_score), r);
-    }
-
-    OUTPUT:
-    RETVAL
 
 Apache::Scoreboard
 thaw(CLASS, packet)
@@ -124,6 +106,10 @@ thaw(CLASS, packet)
     char *ptr;
 
     CODE:
+    if (!(SvOK(packet) && SvCUR(packet) > (SIZE16*2))) {
+	XSRETURN_UNDEF;
+    }
+
     if (!ap_scoreboard_image) {
 	ap_scoreboard_image = 
 	  (scoreboard *)safemalloc(sizeof(*ap_scoreboard_image));
@@ -159,42 +145,61 @@ image(CLASS)
     OUTPUT:
     RETVAL
 
-Apache::ShortScore
+Apache::ServerScore
 servers(image, idx)
     Apache::Scoreboard image
     int idx
 
     CODE:
-    RETVAL = (Apache__ShortScore )safemalloc(sizeof(*RETVAL));
+    RETVAL = (Apache__ServerScore )safemalloc(sizeof(*RETVAL));
     RETVAL->record = image->servers[idx];
 
     OUTPUT:
     RETVAL
 
 Apache::ParentScore
-parent(image, idx)
+parent(image, idx=0)
     Apache::Scoreboard image
     int idx
 
     CODE:
     RETVAL = (Apache__ParentScore )safemalloc(sizeof(*RETVAL));
     RETVAL->record = image->parent[idx];
+    RETVAL->idx = idx;
 
     OUTPUT:
     RETVAL
 
-MODULE = Apache::Scoreboard   PACKAGE = Apache::ShortScore   PREFIX = short_score_
+void
+pids(image)
+    Apache::Scoreboard image
+
+    PREINIT:
+    AV *av = newAV();
+    int i;
+
+    PPCODE:
+    for (i=0; i<HARD_SERVER_LIMIT; i++) {
+	if (!image->parent[i].pid) {
+	    break;
+	}
+	av_push(av, newSViv(image->parent[i].pid));
+    }
+
+    XPUSHs(sv_2mortal(newRV_noinc((SV*)av)));
+    
+MODULE = Apache::Scoreboard   PACKAGE = Apache::ServerScore   PREFIX = server_score_
 
 void
 DESTROY(self)
-    Apache::ShortScore self
+    Apache::ServerScore self
 
     CODE:
     safefree(self);
 
 void
 times(self)
-    Apache::ShortScore self
+    Apache::ServerScore self
 
     PPCODE:
     if (GIMME == G_ARRAY) {
@@ -221,7 +226,7 @@ times(self)
 
 void
 start_time(self)
-    Apache::ShortScore self
+    Apache::ServerScore self
 
     ALIAS:
     stop_time = 1
@@ -246,7 +251,7 @@ start_time(self)
 
 long
 req_time(self)
-    Apache::ShortScore self
+    Apache::ServerScore self
 
     CODE:
     /* request time in millseconds, same value mod_status displays  */
@@ -269,8 +274,8 @@ req_time(self)
     RETVAL
 
 SV *
-short_score_status(self)
-    Apache::ShortScore self
+server_score_status(self)
+    Apache::ServerScore self
 
     CODE:
     RETVAL = newSV(0);
@@ -282,36 +287,36 @@ short_score_status(self)
     RETVAL
 
 unsigned long
-short_score_access_count(self)
-    Apache::ShortScore self
+server_score_access_count(self)
+    Apache::ServerScore self
 
 unsigned long
-short_score_bytes_served(self)
-    Apache::ShortScore self
+server_score_bytes_served(self)
+    Apache::ServerScore self
 
 unsigned long
-short_score_my_access_count(self)
-    Apache::ShortScore self
+server_score_my_access_count(self)
+    Apache::ServerScore self
 
 unsigned long
-short_score_my_bytes_served(self)
-    Apache::ShortScore self
+server_score_my_bytes_served(self)
+    Apache::ServerScore self
 
 unsigned long
-short_score_conn_bytes(self)
-    Apache::ShortScore self
+server_score_conn_bytes(self)
+    Apache::ServerScore self
 
 unsigned short
-short_score_conn_count(self)
-    Apache::ShortScore self
+server_score_conn_count(self)
+    Apache::ServerScore self
 
 char *
-short_score_client(self)
-    Apache::ShortScore self
+server_score_client(self)
+    Apache::ServerScore self
 
 char *
-short_score_request(self)
-    Apache::ShortScore self
+server_score_request(self)
+    Apache::ServerScore self
 
 MODULE = Apache::Scoreboard   PACKAGE = Apache::ParentScore   PREFIX = parent_score_
 
@@ -326,3 +331,29 @@ pid_t
 parent_score_pid(self)
     Apache::ParentScore self
 
+Apache::ParentScore
+next(self)
+    Apache::ParentScore self
+
+    CODE:
+    ++self->idx;
+    if (!ap_scoreboard_image->parent[self->idx].pid) {
+	XSRETURN_UNDEF;
+    }
+    RETVAL = (Apache__ParentScore )safemalloc(sizeof(*RETVAL));
+    RETVAL->record = ap_scoreboard_image->parent[self->idx];
+    RETVAL->idx = self->idx;
+
+    OUTPUT:
+    RETVAL
+
+Apache::ServerScore
+server(self)
+    Apache::ParentScore self
+
+    CODE:
+    RETVAL = (Apache__ServerScore )safemalloc(sizeof(*RETVAL));
+    RETVAL->record = ap_scoreboard_image->servers[self->idx];
+
+    OUTPUT:
+    RETVAL

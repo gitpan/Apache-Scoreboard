@@ -3,9 +3,15 @@ Makefile.PL
 Scoreboard.pm
 Scoreboard.xs
 typemap
-pid-test
 Changes
 README
 Dummy/dummy.c
 Dummy/Makefile.PL
 Dummy/DummyScoreboard.pm
+apxs/send.c
+apxs/mod_scoreboard_send.c
+apxs/Makefile
+examples/scoreboard-access-png.pl
+examples/scoreboard-mem-usage-png.pl
+examples/scoreboard-cpu-png.pl
+examples/scoreboard-status-png.pl
