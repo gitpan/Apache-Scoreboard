@@ -1,18 +1,23 @@
+#include "httpd.h"
+#include "scoreboard.h"
+
+scoreboard *ap_scoreboard_image = NULL;
+
+void ap_sync_scoreboard_image(void)
+{
+}
+
+int ap_exists_scoreboard_image(void)
+{
+    return 0;
+}
 #define PERL_NO_GET_CONTEXT /* we want efficiency */
+/* #include "xs/modperl_xs_typedefs.h" */
 #include "mod_perl.h"
 #include "modperl_xs_sv_convert.h"
 #include "modperl_xs_typedefs.h"
 
 #include "scoreboard.h"
-
-/* XXX: currently only for mp2 */
-#define SB_TRACE_DO 0
-
-#if SB_TRACE_DO && defined(MP_TRACE)
-#define SB_TRACE modperl_trace
-#else
-#define SB_TRACE if (0) modperl_trace
-#endif
 
 /* scoreboard */
 typedef struct {
@@ -21,13 +26,13 @@ typedef struct {
 } modperl_scoreboard_t;
 
 typedef struct {
-    worker_score *record;
+    worker_score record;
     int parent_idx;
     int worker_idx;
 } modperl_worker_score_t;
 
 typedef struct {
-    process_score *record;
+    process_score record;
     int idx;
     scoreboard *sb;
     apr_pool_t *pool;
@@ -45,40 +50,31 @@ int server_limit, thread_limit;
 static char status_flags[SERVER_NUM_STATUS];
 
 #define scoreboard_up_time(image) \
-    (apr_uint32_t) apr_time_sec( \
-        apr_time_now() - image->sb->global->restart_time);
+    (apr_uint32_t)((apr_time_now() - image->sb->global->restart_time) / APR_USEC_PER_SEC);
 
-#define parent_score_pid(mps)  mps->record->pid
+#define parent_score_pid(mps)  mps->record.pid
 
 #define worker_score_most_recent(mws) \
-    (apr_uint32_t) apr_time_sec(apr_time_now() - mws->record->last_used);
-
-/* XXX: as of 20031219, tid is not maintained in scoreboard */
-#if APR_HAS_THREADS
-#define worker_score_tid(mws)             mws->record->tid
-#else
-#define worker_score_tid(mws)             NULL
-#endif
-
-#define worker_score_thread_num(mws)      mws->record->thread_num
-#define worker_score_access_count(mws)    mws->record->access_count
-#define worker_score_bytes_served(mws)    mws->record->bytes_served
-#define worker_score_my_access_count(mws) mws->record->my_access_count
-#define worker_score_my_bytes_served(mws) mws->record->my_bytes_served
-#define worker_score_conn_bytes(mws)      mws->record->conn_bytes
-#define worker_score_conn_count(mws)      mws->record->conn_count
-#define worker_score_client(mws)          mws->record->client
-#define worker_score_request(mws)         mws->record->request
-#define worker_score_vhost(mws)           mws->record->vhost
+    (apr_uint32_t)((apr_time_now() - mws->record.last_used) / APR_USEC_PER_SEC);
+        
+#define worker_score_access_count(mws)    mws->record.access_count
+#define worker_score_bytes_served(mws)    mws->record.bytes_served
+#define worker_score_my_access_count(mws) mws->record.my_access_count
+#define worker_score_my_bytes_served(mws) mws->record.my_bytes_served
+#define worker_score_conn_bytes(mws)      mws->record.conn_bytes
+#define worker_score_conn_count(mws)      mws->record.conn_count
+#define worker_score_client(mws)          mws->record.client
+#define worker_score_request(mws)         mws->record.request
+#define worker_score_vhost(mws)           mws->record.vhost
 
 /* a worker that have served/serves at least one request and isn't
  * dead yet */
-#define LIVE_WORKER(ws) ws->access_count != 0 || \
-    ws->status != SERVER_DEAD
+#define LIVE_WORKER(ws) ws.access_count != 0 || \
+    ws.status != SERVER_DEAD
 
 /* a worker that does something at this very moment */
-#define ACTIVE_WORKER(ws) ws->access_count != 0 || \
-    (ws->status != SERVER_DEAD && ws->status != SERVER_READY)
+#define ACTIVE_WORKER(ws) ws.access_count != 0 || \
+    (ws.status != SERVER_DEAD && ws.status != SERVER_READY)
 
 
 
@@ -101,7 +97,7 @@ static void status_flags_init(void)
 
 #include "apxs/send.c"
 
-MODULE = Apache::Scoreboard   PACKAGE = Apache::Scoreboard   PREFIX = scoreboard_
+MODULE = Apache::DummyScoreboard   PACKAGE = Apache::Scoreboard   PREFIX = scoreboard_
 
 BOOT:
 {
@@ -203,20 +199,23 @@ thaw(CLASS, pool, packet)
 
     CLASS = CLASS; /* avoid warnings */
  
-    image = (modperl_scoreboard_t *)apr_pcalloc(pool, sizeof(*image));
-    sb    =           (scoreboard *)apr_pcalloc(pool, sizeof(scoreboard));
-
+    image = (modperl_scoreboard_t *)apr_palloc(pool, sizeof(*image));
+    sb          =     (scoreboard *)apr_palloc(pool, sizeof(scoreboard));
+    sb->parent  =  (process_score *)apr_palloc(pool, sizeof(process_score *));
+    sb->servers =  (worker_score **)apr_palloc(pool, server_limit * sizeof(worker_score));
+    sb->global  =   (global_score *)apr_palloc(pool, sizeof(global_score *));
+    
     ptr = SvPVX(packet);
     psize = unpack16(ptr);
     ptr += SIZE16;
     ssize = unpack16(ptr);
     ptr += SIZE16;
 
-    sb->parent  = (process_score *)Copy_pool(pool, ptr, psize, char);
+    Move(ptr, &sb->parent[0], psize, char);
     ptr += psize;
-    sb->servers = (worker_score **)Copy_pool(pool, ptr, ssize, char);
+    Move(ptr, &sb->servers[0], ssize, char);
     ptr += ssize;
-    sb->global  = (global_score *) Copy_pool(pool, ptr, sizeof(global_score), char);
+    Move(ptr, &sb->global, sizeof(global_score), char);
 
     image->pool = pool;
     image->sb   = sb;
@@ -252,15 +251,10 @@ parent_score(self, idx=0)
     Apache::Scoreboard self
     int idx
 
-    PREINIT:
-    process_score *ps;
-    
     CODE:
-    ps = ap_get_scoreboard_process(idx);
-/* XXX */
-    if (!ps->quiescing && ps->pid) {
+    if (self->sb->parent[idx].pid) {
         RETVAL = (modperl_parent_score_t *)apr_pcalloc(self->pool, (sizeof(*RETVAL)));
-        RETVAL->record = ps;
+        RETVAL->record = self->sb->parent[idx];
         RETVAL->idx    = idx;
         RETVAL->sb     = self->sb;
         RETVAL->pool   = self->pool;
@@ -281,7 +275,7 @@ worker_score(self, parent_idx, worker_idx)
     CODE:
     RETVAL = (modperl_worker_score_t *)apr_pcalloc(self->pool, (sizeof(*RETVAL)));
 
-    RETVAL->record = ap_get_scoreboard_worker(parent_idx, worker_idx);
+    RETVAL->record = self->sb->servers[parent_idx][worker_idx];
     RETVAL->parent_idx = parent_idx;
     RETVAL->worker_idx = worker_idx;
     
@@ -369,7 +363,7 @@ apr_uint32_t
 scoreboard_up_time(self)
     Apache::Scoreboard self
 
-MODULE = Apache::Scoreboard PACKAGE = Apache::ScoreboardParentScore PREFIX = parent_score_
+MODULE = Apache::DummyScoreboard PACKAGE = Apache::ScoreboardParentScore PREFIX = parent_score_
     
 Apache::ScoreboardParentScore
 next(self)
@@ -377,15 +371,13 @@ next(self)
 
     PREINIT:
     int next_idx;
-    process_score *ps;
-
+    
     CODE:
     next_idx = self->idx + 1;
-    ps = ap_get_scoreboard_process(next_idx);
 
-    if (ps->pid) {
+    if (self->sb->parent[next_idx].pid) {
         RETVAL = (modperl_parent_score_t *)apr_pcalloc(self->pool, sizeof(*RETVAL));
-        RETVAL->record = ps;
+        RETVAL->record = self->sb->parent[next_idx];
         RETVAL->idx    = next_idx;
         RETVAL->sb     = self->sb;
         RETVAL->pool   = self->pool;
@@ -403,7 +395,7 @@ worker_score(self)
 
     CODE:
     RETVAL = (modperl_worker_score_t *)apr_pcalloc(self->pool, sizeof(*RETVAL));
-    RETVAL->record     = ap_get_scoreboard_worker(self->idx, 0);
+    RETVAL->record     = self->sb->servers[self->idx][0];
     RETVAL->parent_idx = self->idx;
     RETVAL->worker_idx = 0;
 
@@ -422,7 +414,7 @@ next_worker_score(self, mws)
     next_idx = mws->worker_idx + 1;
     if (next_idx < thread_limit) {
         RETVAL = (modperl_worker_score_t *)apr_pcalloc(self->pool, sizeof(*RETVAL));
-        RETVAL->record = ap_get_scoreboard_worker(mws->parent_idx, next_idx);
+        RETVAL->record     = self->sb->servers[mws->parent_idx][next_idx];
         RETVAL->parent_idx = mws->parent_idx;
         RETVAL->worker_idx = next_idx;
     }
@@ -447,10 +439,9 @@ next_live_worker_score(self, mws)
     next_idx = mws->worker_idx;
 
     while (++next_idx < thread_limit) {
-        worker_score *ws = ap_get_scoreboard_worker(mws->parent_idx, next_idx);
-        if (LIVE_WORKER(ws)) {
+        if (LIVE_WORKER(self->sb->servers[mws->parent_idx][next_idx])) {
             RETVAL = (modperl_worker_score_t *)apr_pcalloc(self->pool, sizeof(*RETVAL));
-            RETVAL->record     = ws;
+            RETVAL->record     = self->sb->servers[mws->parent_idx][next_idx];
             RETVAL->parent_idx = mws->parent_idx;
             RETVAL->worker_idx = next_idx;
             found++;
@@ -479,11 +470,9 @@ next_active_worker_score(self, mws)
     CODE:
     next_idx = mws->worker_idx;
     while (++next_idx < thread_limit) {
-        worker_score *ws = ap_get_scoreboard_worker(mws->parent_idx, next_idx);
-        if (ACTIVE_WORKER(ws)) {
-            RETVAL = (modperl_worker_score_t *)apr_pcalloc(self->pool,
-                                                           sizeof(*RETVAL));
-            RETVAL->record     = ws;
+        if (ACTIVE_WORKER(self->sb->servers[mws->parent_idx][next_idx])) {
+            RETVAL = (modperl_worker_score_t *)apr_pcalloc(self->pool, sizeof(*RETVAL));
+            RETVAL->record     = self->sb->servers[mws->parent_idx][next_idx];
             RETVAL->parent_idx = mws->parent_idx;
             RETVAL->worker_idx = next_idx;
             found++;
@@ -502,7 +491,7 @@ pid_t
 parent_score_pid(self)
     Apache::ScoreboardParentScore self
     
-MODULE = Apache::Scoreboard PACKAGE = Apache::ScoreboardWorkerScore PREFIX = worker_score_
+MODULE = Apache::DummyScoreboard PACKAGE = Apache::ScoreboardWorkerScore PREFIX = worker_score_
 
 void
 times(self)
@@ -512,10 +501,10 @@ times(self)
     if (GIMME == G_ARRAY) {
 	/* same return values as CORE::times() */
 	EXTEND(sp, 4);
-	PUSHs(sv_2mortal(newSViv(self->record->times.tms_utime)));
-	PUSHs(sv_2mortal(newSViv(self->record->times.tms_stime)));
-	PUSHs(sv_2mortal(newSViv(self->record->times.tms_cutime)));
-	PUSHs(sv_2mortal(newSViv(self->record->times.tms_cstime)));
+	PUSHs(sv_2mortal(newSViv(self->record.times.tms_utime)));
+	PUSHs(sv_2mortal(newSViv(self->record.times.tms_stime)));
+	PUSHs(sv_2mortal(newSViv(self->record.times.tms_cutime)));
+	PUSHs(sv_2mortal(newSViv(self->record.times.tms_cstime)));
     }
     else {
 #ifdef _SC_CLK_TCK
@@ -523,15 +512,16 @@ times(self)
 #else
 	float tick = HZ;
 #endif
-	if (self->record->access_count) {
+	if (self->record.access_count) {
 	    /* cpu %, same value mod_status displays */
-	      float RETVAL = (self->record->times.tms_utime +
-			      self->record->times.tms_stime +
-			      self->record->times.tms_cutime +
-			      self->record->times.tms_cstime);
+	      float RETVAL = (self->record.times.tms_utime +
+			      self->record.times.tms_stime +
+			      self->record.times.tms_cutime +
+			      self->record.times.tms_cstime);
 	    XPUSHs(sv_2mortal(newSVnv((double)RETVAL/tick)));
 	}
 	else {
+            
 	    XPUSHs(sv_2mortal(newSViv((0))));
 	}
     }
@@ -550,31 +540,19 @@ start_time(self)
     PPCODE:
     ix = ix; /* warnings */
     tp = (XSANY.any_i32 == 0) ? 
-         self->record->start_time : self->record->stop_time;
+         self->record.start_time : self->record.stop_time;
 
-    SB_TRACE(MP_FUNC, "%s_time: %5" APR_TIME_T_FMT "\n",
-            (XSANY.any_i32 == 0 ? "start" : "stop"), tp);
-
-    {
-        /*** XXX debug ***/
-        worker_score *ws_record = ap_get_scoreboard_worker(0, 0);
-        SB_TRACE(MP_FUNC, "start: %5" APR_TIME_T_FMT "\n"
-                 "stop: %5" APR_TIME_T_FMT "\n"
-                 "last used: %5" APR_TIME_T_FMT "\n",
-                 ws_record->start_time,
-                 ws_record->stop_time,
-                 ws_record->last_used);
-    }
+    /* fprintf(stderr, "start_time: %5" APR_TIME_T_FMT "\n", tp); */
 
     /* do the same as Time::HiRes::gettimeofday */
     if (GIMME == G_ARRAY) {
 	EXTEND(sp, 2);
-	PUSHs(sv_2mortal(newSViv(apr_time_sec(tp))));
-	PUSHs(sv_2mortal(newSViv(apr_time_sec(tp) - apr_time_usec(tp))));
+	PUSHs(sv_2mortal(newSViv(tp / APR_USEC_PER_SEC)));
+	PUSHs(sv_2mortal(newSViv(tp / APR_USEC_PER_SEC - tp % APR_USEC_PER_SEC )));
     } 
     else {
 	EXTEND(sp, 1);
-	PUSHs(sv_2mortal(newSVnv(apr_time_sec(tp))));
+	PUSHs(sv_2mortal(newSVnv((double)tp / APR_USEC_PER_SEC )));
     }
 
 long
@@ -582,14 +560,14 @@ req_time(self)
     Apache::ScoreboardWorkerScore self
 
     CODE:
-    if (self->record->start_time == 0L) {
+    if (self->record.start_time == 0L) {
 	RETVAL = 0L;
     }
     else {
 	RETVAL = (long)
-            ((self->record->stop_time - self->record->start_time) / 1000);
+            ((self->record.stop_time - self->record.start_time) / 1000);
     }
-    if (RETVAL < 0L || !self->record->access_count) {
+    if (RETVAL < 0L || !self->record.access_count) {
 	RETVAL = 0L;
     }
 
@@ -602,28 +580,15 @@ worker_score_status(self)
 
     CODE:
     RETVAL = newSV(0);
-    sv_setnv(RETVAL, (double)self->record->status);
-    Perl_sv_setpvf(aTHX_ RETVAL, "%c", status_flags[self->record->status]);
+    sv_setnv(RETVAL, (double)self->record.status);
+    sv_setpvf(RETVAL, "%c", status_flags[self->record.status]);
     SvNOK_on(RETVAL); /* dual-var */ 
 
     OUTPUT:
     RETVAL
 
-# at the moment always gives 0 (blame httpd)    
-U32
-worker_score_tid(self)
-    Apache::ScoreboardWorkerScore self
 
-    CODE:
-    RETVAL = worker_score_tid(self);
 
-    OUTPUT:
-    RETVAL
-    
-int
-worker_score_thread_num(self)
-    Apache::ScoreboardWorkerScore self
-    
 unsigned long
 worker_score_access_count(self)
     Apache::ScoreboardWorkerScore self
