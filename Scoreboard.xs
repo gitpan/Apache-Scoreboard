@@ -167,7 +167,6 @@ servers(image, idx=0)
 
     CODE:
     RETVAL = (Apache__ServerScore )safemalloc(sizeof(*RETVAL));
-    RETVAL = NULL;
 
     if (XSANY.any_i32 == 1) {
 	int i;

@@ -1,3 +1,7 @@
+0.10 - February 8, 2000
+
+fixed core dump in $image->servers($i), thanks to Stas for the spot
+
 0.09 - January 31, 2000
 
 added $image->self method
