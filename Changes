@@ -1,3 +1,11 @@
+0.05 - November 28, 1999
+
+$server->status is now a dual-var
+
+added times(), start_time(), stop_time(), req_time() methods
+
+fetch() is more robust
+
 0.04 - November 23, 1999
 
 added send/fetch methods

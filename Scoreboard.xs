@@ -1,6 +1,11 @@
 #include "modules/perl/mod_perl.h"
 #include "scoreboard.h"
 
+#define REMOTE_SCOREBOARD_TYPE "application/x-apache-scoreboard"
+#ifndef HZ
+#define HZ 100
+#endif
+
 typedef struct {
     short_score record;
 } Apache__short_score;
@@ -27,6 +32,8 @@ typedef scoreboard * Apache__Scoreboard;
 
 #define parent_score_pid(s) s->record.pid
 
+static char status_flags[SERVER_NUM_STATUS];
+
 #define SIZE16 2
 
 static void pack16(unsigned char *s, int p)
@@ -42,13 +49,30 @@ static unsigned short unpack16(unsigned char *s)
     return ntohs(ashort);
 }
 
+static void status_flags_init(void)
+{
+    status_flags[SERVER_DEAD] = '.';
+    status_flags[SERVER_READY] = '_';
+    status_flags[SERVER_STARTING] = 'S';
+    status_flags[SERVER_BUSY_READ] = 'R';
+    status_flags[SERVER_BUSY_WRITE] = 'W';
+    status_flags[SERVER_BUSY_KEEPALIVE] = 'K';
+    status_flags[SERVER_BUSY_LOG] = 'L';
+    status_flags[SERVER_BUSY_DNS] = 'D';
+    status_flags[SERVER_GRACEFUL] = 'G';
+}
+
 MODULE = Apache::Scoreboard   PACKAGE = Apache::Scoreboard
 
 BOOT:
 {
     HV *stash = gv_stashpv("Apache::Constants", TRUE);
-    (void)newCONSTSUB(stash, "HARD_SERVER_LIMIT",
-		      newSViv(HARD_SERVER_LIMIT));
+    newCONSTSUB(stash, "HARD_SERVER_LIMIT",
+		newSViv(HARD_SERVER_LIMIT));
+    stash = gv_stashpv("Apache::Scoreboard", TRUE);
+    newCONSTSUB(stash, "REMOTE_SCOREBOARD_TYPE",
+		newSVpv(REMOTE_SCOREBOARD_TYPE, 0));
+    status_flags_init();
 }
 
 int
@@ -77,7 +101,7 @@ send(r)
     pack16(ptr, ssize);
 
     ap_set_content_length(r, tsize);
-    r->content_type = "application/x-apache-scoreboard";
+    r->content_type = REMOTE_SCOREBOARD_TYPE;
     ap_send_http_header(r);
 
     if (!r->header_only) {
@@ -91,7 +115,7 @@ send(r)
     RETVAL
 
 Apache::Scoreboard
-receive(CLASS, packet)
+thaw(CLASS, packet)
     SV *CLASS
     SV *packet
 
@@ -103,8 +127,8 @@ receive(CLASS, packet)
     if (!ap_scoreboard_image) {
 	ap_scoreboard_image = 
 	  (scoreboard *)safemalloc(sizeof(*ap_scoreboard_image));
+	memset((char *)ap_scoreboard_image, 0, sizeof(*ap_scoreboard_image));
     }
-    memset((char *)ap_scoreboard_image, 0, sizeof(*ap_scoreboard_image));
 
     RETVAL = ap_scoreboard_image;
     ptr = SvPVX(packet);
@@ -168,9 +192,94 @@ DESTROY(self)
     CODE:
     safefree(self);
 
-unsigned char
+void
+times(self)
+    Apache::ShortScore self
+
+    PPCODE:
+    if (GIMME == G_ARRAY) {
+	/* same return values as CORE::times() */
+	EXTEND(sp, 4);
+	PUSHs(sv_2mortal(newSViv(self->record.times.tms_utime)));
+	PUSHs(sv_2mortal(newSViv(self->record.times.tms_stime)));
+	PUSHs(sv_2mortal(newSViv(self->record.times.tms_cutime)));
+	PUSHs(sv_2mortal(newSViv(self->record.times.tms_cstime)));
+    }
+    else {
+#ifdef _SC_CLK_TCK
+	float tick = sysconf(_SC_CLK_TCK);
+#else
+	float tick = HZ;
+#endif
+	/* cpu %, same value mod_status displays */
+	float RETVAL = (self->record.times.tms_utime +
+			self->record.times.tms_stime +
+			self->record.times.tms_cutime +
+			self->record.times.tms_cstime);
+	XPUSHs(sv_2mortal(newSVnv((double)RETVAL/tick)));
+    }
+
+void
+start_time(self)
+    Apache::ShortScore self
+
+    ALIAS:
+    stop_time = 1
+
+    PREINIT:
+    struct timeval tp;
+
+    PPCODE:
+    tp = (XSANY.any_i32 == 0) ? 
+         self->record.start_time : self->record.stop_time;
+
+    /* do the same as Time::HiRes::gettimeofday */
+    if (GIMME == G_ARRAY) {
+	EXTEND(sp, 2);
+	PUSHs(sv_2mortal(newSViv(tp.tv_sec)));
+	PUSHs(sv_2mortal(newSViv(tp.tv_usec)));
+    } 
+    else {
+	EXTEND(sp, 1);
+	PUSHs(sv_2mortal(newSVnv(tp.tv_sec + (tp.tv_usec / 1000000.0))));
+    }
+
+long
+req_time(self)
+    Apache::ShortScore self
+
+    CODE:
+    /* request time in millseconds, same value mod_status displays  */
+    if (self->record.start_time.tv_sec == 0L &&
+	self->record.start_time.tv_usec == 0L) {
+	RETVAL = 0L;
+    }
+    else {
+	RETVAL =
+	  ((self->record.stop_time.tv_sec - 
+	    self->record.start_time.tv_sec) * 1000) +
+	      ((self->record.stop_time.tv_usec - 
+		self->record.start_time.tv_usec) / 1000);
+    }
+    if (RETVAL < 0L) {
+	RETVAL = 0L;
+    }
+
+    OUTPUT:
+    RETVAL
+
+SV *
 short_score_status(self)
     Apache::ShortScore self
+
+    CODE:
+    RETVAL = newSV(0);
+    sv_setnv(RETVAL, (double)self->record.status);
+    sv_setpvf(RETVAL, "%c", status_flags[self->record.status]);
+    SvNOK_on(RETVAL); /* dual-var */ 
+
+    OUTPUT:
+    RETVAL
 
 unsigned long
 short_score_access_count(self)

@@ -28,3 +28,15 @@ cvs_tag :
 EOF
 }
 
+sub MY::top_targets {
+    my $self = shift;
+    my $string = $self->MM::top_targets;
+
+    $string .= <<'EOF';
+dummy:
+	cd Dummy && $(PERL) Makefile.PL -g
+
+EOF
+
+    $string;
+}

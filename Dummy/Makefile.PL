@@ -8,10 +8,16 @@ my $typemaps = $src->typemaps;
 
 #mmm
 system "cp ../typemap ." unless -e "typemap";
-system "cat dummy.c ../Scoreboard.xs > DummyScoreboard.xs";
-system $^X, "-pi", "-e",
-  "s/(MODULE *= *Apache::)Scoreboard/\$1.DummyScoreboard/e", 
-  "DummyScoreboard.xs";
+
+sub genxs {
+    system "cat dummy.c ../Scoreboard.xs > DummyScoreboard.xs";
+    system $^X, "-pi", "-e",
+    "s/(MODULE *= *Apache::)Scoreboard/\$1.DummyScoreboard/e", 
+    "DummyScoreboard.xs";
+}
+
+genxs();
+exit if $ARGV[0] eq '-g';
 
 WriteMakefile(
     'NAME'	=> 'Apache::DummyScoreboard',
