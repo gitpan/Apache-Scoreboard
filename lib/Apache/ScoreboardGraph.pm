@@ -2,9 +2,9 @@ package Apache::ScoreboardGraph;
 
 use strict;
 use Apache::Scoreboard ();
-use PNGgraph::bars ();
-use PNGgraph::pie ();
-use PNGgraph::lines ();
+use Chart::PNGgraph::bars ();
+use Chart::PNGgraph::pie ();
+use Chart::PNGgraph::lines ();
 
 use constant KB => 1024;
 
@@ -42,7 +42,7 @@ sub access {
     
     my $data = [\@labels, \@access, \@bytes];
     
-    my $graph = PNGgraph::bars->new;
+    my $graph = Chart::PNGgraph::bars->new;
     
     $graph->set( 
 		x_label => 'Child PID',
@@ -94,7 +94,7 @@ sub status {
     
     my $data = [\@nlabels, [@data{keys %data}]];
     
-    my $graph = PNGgraph::pie->new(250, 250);
+    my $graph = Chart::PNGgraph::pie->new(250, 250);
     
     $graph->set( 
 		title => "$self->{host} Server Status",
@@ -128,7 +128,7 @@ sub cpu {
     
     my $data = [\@labels, \@cpu, \@req_time];
     
-    my $graph = PNGgraph::bars->new;
+    my $graph = Chart::PNGgraph::bars->new;
     
     $graph->set( 
 		x_label => 'Child PID',
@@ -178,7 +178,7 @@ sub mem_usage {
     
     my $data = [@data{'labels', @mem}];
     
-    my $graph = PNGgraph::lines->new;
+    my $graph = Chart::PNGgraph::lines->new;
     
     $graph->set( 
 		x_label => 'Child PID',

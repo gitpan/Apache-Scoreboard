@@ -1,3 +1,9 @@
+0.09 - January 31, 2000
+
+added $image->self method
+
+fixed bug in thaw() (Zero the scoreboard image)
+
 0.08 - December 7, 1999
 
 most of example code moved to Apache::ScoreboardGraph

@@ -5,7 +5,7 @@ use constant DEBUG => 0;
 
 BEGIN {
     no strict;
-    $VERSION = '0.08';
+    $VERSION = '0.09';
     @ISA = qw(DynaLoader);
     if ($ENV{MOD_PERL}) {
 	__PACKAGE__->bootstrap($VERSION);

@@ -97,6 +97,7 @@ END()
     CODE:
     if (my_scoreboard_image) {
 	safefree(my_scoreboard_image);
+	my_scoreboard_image = NULL;
     }
 
 SV *
@@ -124,8 +125,8 @@ thaw(CLASS, packet)
     if (!my_scoreboard_image) {
 	my_scoreboard_image = 
 	  (scoreboard *)safemalloc(sizeof(*my_scoreboard_image));
-	memset((char *)my_scoreboard_image, 0, sizeof(*my_scoreboard_image));
     }
+    Zero(my_scoreboard_image, 1, scoreboard); /*XXX*/
 
     RETVAL = my_scoreboard_image;
     ptr = SvPVX(packet);
@@ -157,13 +158,30 @@ image(CLASS)
     RETVAL
 
 Apache::ServerScore
-servers(image, idx)
+servers(image, idx=0)
     Apache::Scoreboard image
     int idx
 
+    ALIAS:
+    self = 1
+
     CODE:
     RETVAL = (Apache__ServerScore )safemalloc(sizeof(*RETVAL));
-    RETVAL->record = image->servers[idx];
+    RETVAL = NULL;
+
+    if (XSANY.any_i32 == 1) {
+	int i;
+	SV *sv = perl_get_sv("$$", TRUE); /* avoid getpid() call */
+	pid_t pid = SvIV(sv);
+	for (i=0; i<HARD_SERVER_LIMIT; i++) {
+	    if (image->parent[i].pid == pid) {
+		RETVAL->record = image->servers[i];
+	    }
+	}
+    }
+    else {
+	RETVAL->record = image->servers[idx];
+    }
 
     OUTPUT:
     RETVAL
