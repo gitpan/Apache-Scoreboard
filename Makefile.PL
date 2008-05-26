@@ -30,13 +30,22 @@ my @scripts = qw(t/TEST);
 Apache::TestMM::filter_args();
 Apache::TestMM::generate_script('t/TEST');
 
+# get the apr header files, depending on where they are
+my $apr_config = `which apr-config 2>/dev/null` || `which apr-1-config 2>/dev/null`;
+chomp $apr_config;
+my $apr_inc = `$apr_config --includedir`;
+chomp $apr_inc;
+my $extra_inc;
+$extra_inc = "-I$apr_inc"	if ($apr_inc);
+
 ModPerl::MM::WriteMakefile(
     NAME         => 'Apache::Scoreboard',
     VERSION_FROM => 'lib/Apache/Scoreboard.pm',
     PREREQ_PM    => \%require,
     clean        => {
         FILES => "@{ clean_files() }",
-    }
+    },
+    INC => join " ", $extra_inc, ModPerl::MM::get_def_opt('INC'),
 );
 
 sub clean_files {
