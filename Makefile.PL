@@ -38,6 +38,7 @@ chomp $apr_inc;
 my $extra_inc;
 $extra_inc = "-I$apr_inc"	if ($apr_inc);
 
+ModPerl::MM::build_config();
 ModPerl::MM::WriteMakefile(
     NAME         => 'Apache::Scoreboard',
     VERSION_FROM => 'lib/Apache/Scoreboard.pm',

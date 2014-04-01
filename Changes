@@ -1,3 +1,7 @@
+2.10 - Mon Mar 31 20:05:00 EST 2014
+
+Update Makefile.PL to call build_config before referencing it as that seems to no longer happen automatically. Fixes build issue with perl 5.14 and later
+
 2.09 - Tues Mar 4 15:58:00 EST 2008
 
 Only process request if we're enabled for this uri (Patch from Gozer)
